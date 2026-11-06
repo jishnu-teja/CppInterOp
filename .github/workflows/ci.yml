@@ -3,12 +3,13 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main]
+    branches: [main, fix-get-function-using-args]
+  workflow_dispatch:
   release:
     types: [published]
   schedule:
     - cron: '30 20 * * *' # Warning: Timezone dep - 20:00 is 1:00
-
+    
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
