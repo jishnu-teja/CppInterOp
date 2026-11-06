@@ -326,12 +326,12 @@ namespace Cpp {
   CPPINTEROP_API std::vector<TCppFunction_t>
   GetFunctionsUsingName(TCppScope_t scope, const std::string& name);
 
-  TCppFunction_t GetFunctionUsingArgs(TCppScope_t scope,
-                                      const std::string& name,
-                                      TCppType_t* arg_types,
-                                      size_t arg_types_size,
-                                      TemplateArgInfo* template_args,
-                                      size_t template_args_size);
+  CPPINTEROP_API TCppFunction_t GetFunctionUsingArgs(TCppScope_t scope,
+                                                   const std::string& name,
+                                                   TCppType_t* arg_types,
+                                                   size_t arg_types_size,
+                                                   TemplateArgInfo* template_args = nullptr,
+                                                   size_t template_args_size = 0);
 
   /// Gets the return type of the provided function.
   CPPINTEROP_API TCppType_t GetFunctionReturnType(TCppFunction_t func);

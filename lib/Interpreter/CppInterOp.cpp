@@ -825,6 +825,115 @@ namespace Cpp {
     return funcs;
   }
 
+TCppFunction_t GetFunctionUsingArgs(TCppScope_t scope,
+                                      const std::string& name,
+                                      TCppType_t* arg_types,
+                                      size_t arg_types_size,
+                                      TemplateArgInfo* template_args,
+                                      size_t template_args_size) {
+    if (name.empty())
+      return nullptr;
+
+    auto& S = getSema();
+    auto& C = getASTContext();
+
+    DeclContext* DC = nullptr;
+    if (!scope) {
+      DC = C.getTranslationUnitDecl();
+    } else {
+      auto* D = (Decl*)scope;
+      D = GetUnderlyingScope(D);
+      DC = Decl::castToDeclContext(D);
+    }
+
+    if (!DC)
+      return nullptr;
+
+    DeclarationName DName = &C.Idents.get(name);
+    LookupResult R(S, DName, SourceLocation(), Sema::LookupOrdinaryName,
+                   Sema::ForVisibleRedeclaration);
+
+    Cpp_utils::Lookup::Named(&S, R, DC);
+    if (R.empty())
+      return nullptr;
+
+    R.resolveKind();
+
+    // Prepare explicit template arguments if provided
+    TemplateArgumentListInfo TLI{};
+    if (template_args && template_args_size > 0) {
+      for (size_t i = 0; i < template_args_size; ++i) {
+        QualType ArgTy = QualType::getFromOpaquePtr(template_args[i].m_Type);
+        if (template_args[i].m_IntegralValue) {
+          auto Res = llvm::APSInt(template_args[i].m_IntegralValue);
+          Res = Res.extOrTrunc(C.getIntWidth(ArgTy));
+          TemplateArgument TA(C, Res, ArgTy);
+          TLI.addArgument(S.getTrivialTemplateArgumentLoc(TA, QualType(), SourceLocation()));
+        } else {
+          TemplateArgument TA(ArgTy);
+          TLI.addArgument(S.getTrivialTemplateArgumentLoc(TA, QualType(), SourceLocation()));
+        }
+      }
+    }
+
+    // Convert input argument types to QualType array
+    llvm::SmallVector<QualType, 8> ExpectedArgTypes;
+    for (size_t i = 0; i < arg_types_size; ++i) {
+      ExpectedArgTypes.push_back(QualType::getFromOpaquePtr(arg_types[i]));
+    }
+
+    SourceLocation fakeLoc = GetValidSLoc(S);
+
+    for (auto* Found : R) {
+      // Case 1: Plain FunctionDecl
+      if (auto* FD = dyn_cast<FunctionDecl>(Found)) {
+        if (template_args_size > 0)
+          continue;
+
+        if (FD->getNumParams() != arg_types_size)
+          continue;
+
+        bool Matches = true;
+        for (size_t i = 0; i < arg_types_size; ++i) {
+          QualType ParamType = FD->getParamDecl(i)->getType().getCanonicalType();
+          QualType ExpectedType = ExpectedArgTypes[i].getCanonicalType();
+          if (ParamType != ExpectedType) {
+            Matches = false;
+            break;
+          }
+        }
+
+        if (Matches)
+          return FD;
+      }
+      // Case 2: FunctionTemplateDecl
+      else if (auto* FTD = dyn_cast<FunctionTemplateDecl>(Found)) {
+        FunctionDecl* Specialization = nullptr;
+        sema::TemplateDeductionInfo Info(fakeLoc);
+
+        // Subcase 2a: Deduce from function arguments
+        if (arg_types_size > 0) {
+          TemplateArgumentListInfo* ExplicitArgs = (template_args_size > 0) ? &TLI : nullptr;
+          if (S.DeduceTemplateArguments(FTD, ExplicitArgs, ExpectedArgTypes,
+                                        Specialization, Info) == Sema::TDK_Success) {
+            if (Specialization)
+              return Specialization;
+          }
+        }
+        // Subcase 2b: Explicit template arguments only
+        else if (template_args_size > 0) {
+          if (S.DeduceTemplateArguments(FTD, &TLI, Specialization, Info,
+                                        /*IsAddressOfFunction=*/true) == Sema::TDK_Success) {
+            if (Specialization)
+              return Specialization;
+          }
+        }
+      }
+    }
+
+    return nullptr;
+  }
+
   TCppType_t GetFunctionReturnType(TCppFunction_t func)
   {
     auto *D = (clang::Decl *) func;
